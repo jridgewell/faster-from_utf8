@@ -11,13 +11,6 @@ use std::io::Read;
 // use truncation
 const ASCII_MASK: usize = 0x7f7f7f7f_7f7f7f7fu64 as usize;
 
-/// Return `true` if `x` contains any zero byte.
-///
-/// From *Matters Computational*, J. Arndt
-///
-/// "The idea is to subtract one from each of the bytes and then look for
-/// bytes where the borrow propagated all the way to the most significant
-/// bit."
 #[inline]
 fn contains_nonascii(x: usize) -> bool {
     (x & !ASCII_MASK) != 0
