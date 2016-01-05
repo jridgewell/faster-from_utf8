@@ -16,7 +16,13 @@ fn contains_nonascii(x: usize) -> bool {
     (x & !ASCII_MASK) != 0
 }
 
-pub fn find_nonascii(text: &[u8]) -> Option<usize> {
+unsafe fn slice_unchecked(text: &[u8], from: usize) -> &[u8] {
+    debug_assert!(from <= text.len());
+    std::slice::from_raw_parts(text.as_ptr().offset(from as isize),
+                               text.len() - from)
+}
+
+fn find_nonascii(text: &[u8]) -> Option<usize> {
     let len = text.len();
     let ptr = text.as_ptr();
     // FIXME: should be const when stable
@@ -52,7 +58,9 @@ pub fn find_nonascii(text: &[u8]) -> Option<usize> {
     }
 
     // find the byte after the point the body loop stopped
-    text[offset..].iter().position(|elt| *elt >= 128).map(|i| offset + i)
+    unsafe {
+        slice_unchecked(text, offset).iter().position(|elt| *elt >= 128).map(|i| offset + i)
+    }
 }
 
 #[test]
@@ -120,7 +128,6 @@ const TAG_CONT_U8: u8 = 0b1000_0000;
 /// returning `true` in that case, or, if it is invalid, `false` with
 /// `iter` reset such that it is pointing at the first byte in the
 /// invalid sequence.
-#[inline(always)]
 fn utf8_validate(v: &[u8]) -> Result<(), Utf8Error> {
     let mut iter = v.iter();
     let whole = iter.as_slice();
@@ -188,22 +195,18 @@ fn utf8_validate(v: &[u8]) -> Result<(), Utf8Error> {
             }
         } else {
             // ascii case, skip forward quickly
-            let slc = iter.as_slice();
-            match slc.get(0) {
+            let (first, slc) = match iter.as_slice().split_first() {
                 None => return Ok(()),
-                Some(&byte) => {
-                    if byte >= 128 {
-                        continue;
-                    }
-                }
+                Some(r) => r,
+            };
+            if *first >= 128 {
+                continue;
             }
             match find_nonascii(slc) {
                 None => return Ok(()),
                 Some(i) => {
                     unsafe {
-                        iter = std::slice::from_raw_parts(
-                            slc.as_ptr().offset(i as isize),
-                            slc.len() - i).iter();
+                        iter = slice_unchecked(slc, i).iter();
                     }
                }
             };
@@ -298,6 +301,28 @@ fn from_utf8_enwik8_regular(b: &mut Bencher) {
 fn from_utf8_enwik8_fast(b: &mut Bencher) {
     let mut text = Vec::new();
     let mut f = File::open("enwik8").unwrap();
+    f.read_to_end(&mut text).unwrap();
+    b.iter(|| {
+        from_utf8_fast2(&text)
+    });
+    b.bytes = text.len() as u64;
+}
+
+#[bench]
+fn from_utf8_jawik10_regular(b: &mut Bencher) {
+    let mut text = Vec::new();
+    let mut f = File::open("jawik10").unwrap();
+    f.read_to_end(&mut text).unwrap();
+    b.iter(|| {
+        std::str::from_utf8(&text)
+    });
+    b.bytes = text.len() as u64;
+}
+
+#[bench]
+fn from_utf8_jawik10_fast(b: &mut Bencher) {
+    let mut text = Vec::new();
+    let mut f = File::open("jawik10").unwrap();
     f.read_to_end(&mut text).unwrap();
     b.iter(|| {
         from_utf8_fast2(&text)
