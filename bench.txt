@@ -1,6 +1,8 @@
-test from_utf8_cyr_fast        ... bench:      12,749 ns/iter (+/- 158) = 402 MB/s
-test from_utf8_cyr_regular     ... bench:      11,400 ns/iter (+/- 224) = 450 MB/s
-test from_utf8_english_fast    ... bench:         157 ns/iter (+/- 3) = 16248 MB/s
-test from_utf8_english_regular ... bench:       1,943 ns/iter (+/- 50) = 1312 MB/s
-test from_utf8_mixed_fast      ... bench:       4,768 ns/iter (+/- 168) = 1013 MB/s
-test from_utf8_mixed_regular   ... bench:       5,984 ns/iter (+/- 224) = 807 MB/s
+test from_utf8_cyr_fast          ... bench:      11,152 ns/iter (+/- 294) = 460 MB/s
+test from_utf8_cyr_regular       ... bench:      12,278 ns/iter (+/- 369) = 417 MB/s
+test from_utf8_english_fast      ... bench:         159 ns/iter (+/- 2) = 16044 MB/s
+test from_utf8_english_regular   ... bench:       1,963 ns/iter (+/- 26) = 1299 MB/s
+test from_utf8_mixed_fast        ... bench:       4,334 ns/iter (+/- 564) = 1114 MB/s
+test from_utf8_mixed_regular     ... bench:       6,399 ns/iter (+/- 229) = 755 MB/s
+test from_utf8_mostlyasc_fast    ... bench:         414 ns/iter (+/- 11) = 8821 MB/s
+test from_utf8_mostlyasc_regular ... bench:       3,102 ns/iter (+/- 141) = 1177 MB/s
