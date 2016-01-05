@@ -5,6 +5,8 @@ use test::{Bencher, black_box};
 use std::cmp;
 use std::mem;
 use std::str::from_utf8_unchecked;
+use std::fs::File;
+use std::io::Read;
 
 // use truncation
 const ASCII_MASK: usize = 0x7f7f7f7f_7f7f7f7fu64 as usize;
@@ -284,6 +286,28 @@ fn from_utf8_cyr_fast(b: &mut Bencher) {
     let text = black_box(LONG_CY.as_bytes());
     b.iter(|| {
         from_utf8_fast2(text)
+    });
+    b.bytes = text.len() as u64;
+}
+
+#[bench]
+fn from_utf8_enwik8_regular(b: &mut Bencher) {
+    let mut text = Vec::new();
+    let mut f = File::open("enwik8").unwrap();
+    f.read_to_end(&mut text).unwrap();
+    b.iter(|| {
+        std::str::from_utf8(&text)
+    });
+    b.bytes = text.len() as u64;
+}
+
+#[bench]
+fn from_utf8_enwik8_fast(b: &mut Bencher) {
+    let mut text = Vec::new();
+    let mut f = File::open("enwik8").unwrap();
+    f.read_to_end(&mut text).unwrap();
+    b.iter(|| {
+        from_utf8_fast2(&text)
     });
     b.bytes = text.len() as u64;
 }
