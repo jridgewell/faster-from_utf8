@@ -1,0 +1,6 @@
+test from_utf8_cyr_fast        ... bench:      12,749 ns/iter (+/- 158) = 402 MB/s
+test from_utf8_cyr_regular     ... bench:      11,400 ns/iter (+/- 224) = 450 MB/s
+test from_utf8_english_fast    ... bench:         157 ns/iter (+/- 3) = 16248 MB/s
+test from_utf8_english_regular ... bench:       1,943 ns/iter (+/- 50) = 1312 MB/s
+test from_utf8_mixed_fast      ... bench:       4,768 ns/iter (+/- 168) = 1013 MB/s
+test from_utf8_mixed_regular   ... bench:       5,984 ns/iter (+/- 224) = 807 MB/s
