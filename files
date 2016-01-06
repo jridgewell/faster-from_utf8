@@ -1,6 +1,4 @@
 jawik10 is the first 10MB from the unzipped file http://dumps.wikimedia.org/archive/2006/2006-07/jawiki/20061016/jawiki-20061016-pages-articles.xml.bz2
 
-
 big10 is the dataset in http://vaskir.blogspot.ru/2015/09/regular-expressions-rust-vs-f.html
-
 so it's the first 10MB of the unzipped file from https://drive.google.com/open?id=0B8HLQUKik9VtUWlOaHJPdG0xbnM 
