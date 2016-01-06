@@ -9,11 +9,11 @@ use std::fs::File;
 use std::io::Read;
 
 // use truncation
-const ASCII_MASK: usize = 0x7f7f7f7f_7f7f7f7fu64 as usize;
+const NONASCII_MASK: usize = 0x80808080_80808080u64 as usize;
 
 #[inline]
 fn contains_nonascii(x: usize) -> bool {
-    (x & !ASCII_MASK) != 0
+    (x & NONASCII_MASK) != 0
 }
 
 unsafe fn slice_unchecked(text: &[u8], from: usize) -> &[u8] {
@@ -25,22 +25,20 @@ unsafe fn slice_unchecked(text: &[u8], from: usize) -> &[u8] {
 fn find_nonascii(text: &[u8]) -> Option<usize> {
     let len = text.len();
     let ptr = text.as_ptr();
-    // FIXME: should be const when stable
+    // FIXME: should be std::usize::BYTES when stable
     let usize_bytes = mem::size_of::<usize>();
 
-    // search up to an aligned boundary
-    let align = (ptr as usize) & (usize_bytes - 1);
-    let mut offset;
-    if align > 0 {
-        offset = cmp::min(usize_bytes - align, len);
-        if let Some(index) = text[..offset].iter().position(|elt| *elt >= 128) {
-            return Some(index);
-        }
-    } else {
-        offset = 0;
-    }
-
+    let mut offset = 0;
     if len >= 2 * usize_bytes {
+        // search up to an aligned boundary
+        let align = (ptr as usize) & (usize_bytes - 1);
+        if align > 0 {
+            offset = cmp::min(usize_bytes - align, len);
+            if let Some(index) = text[..offset].iter().position(|elt| *elt >= 128) {
+                return Some(index);
+            }
+        }
+
         while offset <= len - 2 * usize_bytes {
             unsafe {
                 let u = *(ptr.offset(offset as isize) as *const usize);
@@ -59,7 +57,9 @@ fn find_nonascii(text: &[u8]) -> Option<usize> {
 
     // find the byte after the point the body loop stopped
     unsafe {
-        slice_unchecked(text, offset).iter().position(|elt| *elt >= 128).map(|i| offset + i)
+        slice_unchecked(text, offset).iter()
+                                     .position(|elt| *elt >= 128)
+                                     .map(|i| offset + i)
     }
 }
 
@@ -94,6 +94,11 @@ pub struct Utf8Error {
     valid_up_to: usize,
 }
 
+pub fn from_utf8_old(v: &[u8]) -> Result<&str, Utf8Error> {
+    try!(utf8_validate_old(v));
+    Ok(unsafe { from_utf8_unchecked(v) })
+}
+
 pub fn from_utf8_fast2(v: &[u8]) -> Result<&str, Utf8Error> {
     try!(utf8_validate(v));
     Ok(unsafe { from_utf8_unchecked(v) })
@@ -124,6 +129,77 @@ const CONT_MASK: u8 = 0b0011_1111;
 /// Value of the tag bits (tag mask is !CONT_MASK) of a continuation byte
 const TAG_CONT_U8: u8 = 0b1000_0000;
 
+fn utf8_validate_old(v: &[u8]) -> Result<(), Utf8Error> {
+    let mut iter = v.iter();
+    let whole = iter.as_slice();
+
+    loop {
+        let old = iter.clone();
+
+        macro_rules! err { () => {{
+            return Err(Utf8Error {
+                valid_up_to: whole.len() - old.as_slice().len()
+            })
+        }}}
+
+        macro_rules! next { () => {
+            match iter.next() {
+                Some(a) => *a,
+                // we needed data, but there was none: error!
+                None => err!(),
+            }
+        }}
+
+        let first = match iter.next() {
+            Some(x) => *x,
+            None => return Ok(()),
+        };
+        if first >= 128 {
+            let w = UTF8_CHAR_WIDTH[first as usize];
+            let second = next!();
+            // 2-byte encoding is for codepoints  \u{0080} to  \u{07ff}
+            //        first  C2 80        last DF BF
+            // 3-byte encoding is for codepoints  \u{0800} to  \u{ffff}
+            //        first  E0 A0 80     last EF BF BF
+            //   excluding surrogates codepoints  \u{d800} to  \u{dfff}
+            //               ED A0 80 to       ED BF BF
+            // 4-byte encoding is for codepoints \u{1000}0 to \u{10ff}ff
+            //        first  F0 90 80 80  last F4 8F BF BF
+            //
+            // Use the UTF-8 syntax from the RFC
+            //
+            // https://tools.ietf.org/html/rfc3629
+            // UTF8-1      = %x00-7F
+            // UTF8-2      = %xC2-DF UTF8-tail
+            // UTF8-3      = %xE0 %xA0-BF UTF8-tail / %xE1-EC 2( UTF8-tail ) /
+            //               %xED %x80-9F UTF8-tail / %xEE-EF 2( UTF8-tail )
+            // UTF8-4      = %xF0 %x90-BF 2( UTF8-tail ) / %xF1-F3 3( UTF8-tail ) /
+            //               %xF4 %x80-8F 2( UTF8-tail )
+            match w {
+                2 => if second & !CONT_MASK != TAG_CONT_U8 {err!()},
+                3 => {
+                    match (first, second, next!() & !CONT_MASK) {
+                        (0xE0         , 0xA0 ... 0xBF, TAG_CONT_U8) |
+                        (0xE1 ... 0xEC, 0x80 ... 0xBF, TAG_CONT_U8) |
+                        (0xED         , 0x80 ... 0x9F, TAG_CONT_U8) |
+                        (0xEE ... 0xEF, 0x80 ... 0xBF, TAG_CONT_U8) => {}
+                        _ => err!()
+                    }
+                }
+                4 => {
+                    match (first, second, next!() & !CONT_MASK, next!() & !CONT_MASK) {
+                        (0xF0         , 0x90 ... 0xBF, TAG_CONT_U8, TAG_CONT_U8) |
+                        (0xF1 ... 0xF3, 0x80 ... 0xBF, TAG_CONT_U8, TAG_CONT_U8) |
+                        (0xF4         , 0x80 ... 0x8F, TAG_CONT_U8, TAG_CONT_U8) => {}
+                        _ => err!()
+                    }
+                }
+                _ => err!()
+            }
+        }
+    }
+}
+
 /// Walk through `iter` checking that it's a valid UTF-8 sequence,
 /// returning `true` in that case, or, if it is invalid, `false` with
 /// `iter` reset such that it is pointing at the first byte in the
@@ -131,11 +207,13 @@ const TAG_CONT_U8: u8 = 0b1000_0000;
 fn utf8_validate(v: &[u8]) -> Result<(), Utf8Error> {
     let mut iter = v.iter();
     let whole = iter.as_slice();
+
     loop {
+        let old = iter.clone();
 
         macro_rules! err { () => {{
             return Err(Utf8Error {
-                valid_up_to: whole.len() - iter.as_slice().len()
+                valid_up_to: whole.len() - old.as_slice().len()
             })
         }}}
 
@@ -194,14 +272,8 @@ fn utf8_validate(v: &[u8]) -> Result<(), Utf8Error> {
                 _ => err!()
             }
         } else {
-            // ascii case, skip forward quickly
-            let (first, slc) = match iter.as_slice().split_first() {
-                None => return Ok(()),
-                Some(r) => r,
-            };
-            if *first >= 128 {
-                continue;
-            }
+            // Ascii case, try to skip forward quickly.
+            let slc = iter.as_slice();
             match find_nonascii(slc) {
                 None => return Ok(()),
                 Some(i) => {
@@ -215,16 +287,16 @@ fn utf8_validate(v: &[u8]) -> Result<(), Utf8Error> {
 }
 
 #[bench]
-fn from_utf8_english_regular(b: &mut Bencher) {
+fn from_utf8_ascii_regular(b: &mut Bencher) {
     let text = black_box(LONG.as_bytes());
     b.iter(|| {
-        std::str::from_utf8(text)
+        from_utf8_old(text)
     });
     b.bytes = text.len() as u64;
 }
 
 #[bench]
-fn from_utf8_english_fast(b: &mut Bencher) {
+fn from_utf8_ascii_fast(b: &mut Bencher) {
     let text = black_box(LONG.as_bytes());
     b.iter(|| {
         from_utf8_fast2(text)
@@ -236,7 +308,7 @@ fn from_utf8_english_fast(b: &mut Bencher) {
 fn from_utf8_mixed_regular(b: &mut Bencher) {
     let text = black_box(MIXED.as_bytes());
     b.iter(|| {
-        std::str::from_utf8(text)
+        from_utf8_old(text)
     });
     b.bytes = text.len() as u64;
 }
@@ -254,7 +326,7 @@ fn from_utf8_mixed_fast(b: &mut Bencher) {
 fn from_utf8_mostlyasc_regular(b: &mut Bencher) {
     let text = black_box(MOSTLY_ASCII.as_bytes());
     b.iter(|| {
-        std::str::from_utf8(text)
+        from_utf8_old(text)
     });
     b.bytes = text.len() as u64;
 }
@@ -272,7 +344,7 @@ fn from_utf8_mostlyasc_fast(b: &mut Bencher) {
 fn from_utf8_cyr_regular(b: &mut Bencher) {
     let text = black_box(LONG_CY.as_bytes());
     b.iter(|| {
-        std::str::from_utf8(text)
+        from_utf8_old(text)
     });
     b.bytes = text.len() as u64;
 }
@@ -292,7 +364,7 @@ fn from_utf8_enwik8_regular(b: &mut Bencher) {
     let mut f = File::open("enwik8").unwrap();
     f.read_to_end(&mut text).unwrap();
     b.iter(|| {
-        std::str::from_utf8(&text)
+        from_utf8_old(&text)
     });
     b.bytes = text.len() as u64;
 }
@@ -314,7 +386,7 @@ fn from_utf8_jawik10_regular(b: &mut Bencher) {
     let mut f = File::open("jawik10").unwrap();
     f.read_to_end(&mut text).unwrap();
     b.iter(|| {
-        std::str::from_utf8(&text)
+        from_utf8_old(&text)
     });
     b.bytes = text.len() as u64;
 }
