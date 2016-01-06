@@ -10,3 +10,6 @@ test from_utf8_mixed_fast        ... bench:       5,029 ns/iter (+/- 256) = 960 
 test from_utf8_mixed_regular     ... bench:       7,124 ns/iter (+/- 3,928) = 678 MB/s
 test from_utf8_mostlyasc_fast    ... bench:         555 ns/iter (+/- 26) = 6580 MB/s
 test from_utf8_mostlyasc_regular ... bench:       3,411 ns/iter (+/- 967) = 1070 MB/s
+
+test from_utf8_big10_fast        ... bench:     954,394 ns/iter (+/- 41,023) = 10978 MB/s
+test from_utf8_big10_regular     ... bench:   8,143,777 ns/iter (+/- 412,158) = 1279 MB/s
