@@ -111,7 +111,7 @@ pub fn run_utf8_validation(v: &[u8], collect: bool) -> Result<Vec<usize>, Utf8Er
             index += 1;
         } else {
             // I've shortened this to focus on the multi-byte sequences. This
-            // should absolute continue to use the NONASCII_MASK processing.
+            // should absolutey continue to use the NONASCII_MASK processing.
             index += 1;
         }
     }
