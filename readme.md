@@ -1,3 +1,8 @@
+# A faster str::from_utf8
+
+Via a Unicode DFA.
+
+```text
 test from_utf8_2_bytes_fast      ... bench:         304 ns/iter (+/- 65) = 1315 MB/s
 test from_utf8_2_bytes_regular   ... bench:         346 ns/iter (+/- 17) = 1156 MB/s
 
@@ -27,3 +32,4 @@ test from_utf8_mixed_regular     ... bench:       3,564 ns/iter (+/- 168) = 1355
 
 test from_utf8_mostlyasc_fast    ... bench:       1,858 ns/iter (+/- 43) = 1965 MB/s
 test from_utf8_mostlyasc_regular ... bench:       2,287 ns/iter (+/- 222) = 1596 MB/s
+```
