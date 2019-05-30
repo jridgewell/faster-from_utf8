@@ -1,22 +1,22 @@
 const CONT_MASK: u8 = 0b0011_1111;
 const TAG_CONT_U8: u8 = 0b1000_0000;
 static UTF8_CHAR_WIDTH: [u8; 256] = [
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, // 0x1F
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, // 0x3F
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, // 0x5F
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, // 0x7F
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, // 0x9F
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, // 0xBF
-    0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    2, // 0xDF
-    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, // 0xEF
-    4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 0xFF
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, // 0x1F
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, // 0x3F
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, // 0x5F
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, // 0x7F
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 0x9F
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, // 0xBF
+0,0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, // 0xDF
+3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3, // 0xEF
+4,4,4,4,4,0,0,0,0,0,0,0,0,0,0,0, // 0xFF
 ];
 
 #[derive(Debug)]
@@ -25,35 +25,45 @@ pub struct Utf8Error {
     error_len: Option<u8>,
 }
 
+const NONASCII_MASK: usize = 0x80808080_80808080u64 as usize;
+
+/// Returns `true` if any byte in the word `x` is nonascii (>= 128).
+#[inline]
+fn contains_nonascii(x: usize) -> bool {
+    (x & NONASCII_MASK) != 0
+}
+
 pub fn run_utf8_validation(v: &[u8], collect: bool) -> Result<Vec<usize>, Utf8Error> {
     let mut index = 0;
     let len = v.len();
     let mut indexes = vec![];
 
+    let usize_bytes = std::mem::size_of::<usize>();
+    let ascii_block_size = 2 * usize_bytes;
+    let blocks_end = if len >= ascii_block_size { len - ascii_block_size + 1 } else { 0 };
+
     while index < len {
-        let old_offset = index;
         if collect {
-            indexes.push(old_offset);
+            indexes.push(index);
         }
+        let old_offset = index;
         macro_rules! err {
             ($error_len: expr) => {
                 return Err(Utf8Error {
                     valid_up_to: old_offset,
                     error_len: $error_len,
-                });
-            };
+                })
+            }
         }
 
-        macro_rules! next {
-            () => {{
-                index += 1;
-                // we needed data, but there was none: error!
-                if index >= len {
-                    err!(None)
-                }
-                v[index]
-            }};
-        }
+        macro_rules! next { () => {{
+            index += 1;
+            // we needed data, but there was none: error!
+            if index >= len {
+                err!(None)
+            }
+            v[index]
+        }}}
 
         let first = v[index];
         if first >= 128 {
@@ -77,18 +87,16 @@ pub fn run_utf8_validation(v: &[u8], collect: bool) -> Result<Vec<usize>, Utf8Er
             // UTF8-4      = %xF0 %x90-BF 2( UTF8-tail ) / %xF1-F3 3( UTF8-tail ) /
             //               %xF4 %x80-8F 2( UTF8-tail )
             match w {
-                2 => {
-                    if next!() & !CONT_MASK != TAG_CONT_U8 {
-                        err!(Some(1))
-                    }
-                }
+                2 => if next!() & !CONT_MASK != TAG_CONT_U8 {
+                    err!(Some(1))
+                },
                 3 => {
                     match (first, next!()) {
-                        (0xE0, 0xA0..=0xBF)
-                        | (0xE1..=0xEC, 0x80..=0xBF)
-                        | (0xED, 0x80..=0x9F)
-                        | (0xEE..=0xEF, 0x80..=0xBF) => {}
-                        _ => err!(Some(1)),
+                        (0xE0         , 0xA0 ..= 0xBF) |
+                        (0xE1 ..= 0xEC, 0x80 ..= 0xBF) |
+                        (0xED         , 0x80 ..= 0x9F) |
+                        (0xEE ..= 0xEF, 0x80 ..= 0xBF) => {}
+                        _ => err!(Some(1))
                     }
                     if next!() & !CONT_MASK != TAG_CONT_U8 {
                         err!(Some(2))
@@ -96,8 +104,10 @@ pub fn run_utf8_validation(v: &[u8], collect: bool) -> Result<Vec<usize>, Utf8Er
                 }
                 4 => {
                     match (first, next!()) {
-                        (0xF0, 0x90..=0xBF) | (0xF1..=0xF3, 0x80..=0xBF) | (0xF4, 0x80..=0x8F) => {}
-                        _ => err!(Some(1)),
+                        (0xF0         , 0x90 ..= 0xBF) |
+                        (0xF1 ..= 0xF3, 0x80 ..= 0xBF) |
+                        (0xF4         , 0x80 ..= 0x8F) => {}
+                        _ => err!(Some(1))
                     }
                     if next!() & !CONT_MASK != TAG_CONT_U8 {
                         err!(Some(2))
@@ -106,13 +116,38 @@ pub fn run_utf8_validation(v: &[u8], collect: bool) -> Result<Vec<usize>, Utf8Er
                         err!(Some(3))
                     }
                 }
-                _ => err!(Some(1)),
+                _ => err!(Some(1))
             }
             index += 1;
         } else {
-            // I've shortened this to focus on the multi-byte sequences. This
-            // should absolutey continue to use the NONASCII_MASK processing.
-            index += 1;
+            // Ascii case, try to skip forward quickly.
+            // When the pointer is aligned, read 2 words of data per iteration
+            // until we find a word containing a non-ascii byte.
+            let ptr = v.as_ptr();
+            let align = unsafe {
+                // the offset is safe, because `index` is guaranteed inbounds
+                ptr.add(index).align_offset(usize_bytes)
+            };
+            if align == 0 {
+                while index < blocks_end {
+                    unsafe {
+                        let block = ptr.add(index) as *const usize;
+                        // break if there is a nonascii byte
+                        let zu = contains_nonascii(*block);
+                        let zv = contains_nonascii(*block.offset(1));
+                        if zu | zv {
+                            break;
+                        }
+                    }
+                    index += ascii_block_size;
+                }
+                // step from the point where the wordwise loop stopped
+                while index < len && v[index] < 128 {
+                    index += 1;
+                }
+            } else {
+                index += 1;
+            }
         }
     }
 
